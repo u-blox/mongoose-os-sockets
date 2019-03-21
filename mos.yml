@@ -19,4 +19,5 @@ tags:
 libs:
   - origin: https://github.com/mongoose-os-libs/boards
   - origin: https://github.com/mongoose-os-libs/core
+  - origin: https://github.com/mongoose-os-libs/demo-bundle
 

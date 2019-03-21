@@ -75,3 +75,28 @@ mos console --port blahblah
 ```
 
 ...but if you want to also enter further commands, without having to run two command windows, it may be easier to run the `mos` tool in GUI mode (just click on it) at this point since it will show console output on the right, command output on the left and a command-line appears at the bottom.  Don't forget to check, when you close the GUI, that it really has exited (check in Task Manager) or it will not work next time.
+
+To connect to Wifi, run the following command:
+
+```
+mos wifi SSID PASSWORD --port blahblah
+```
+
+...where `SSID` is the SSID of your Wifi network  and `PASSWORD` is the password for your Wifi network.  You should see something like:
+
+```
+Getting configuration...
+Setting new configuration...
+```
+
+If you reset the target board and look at the console output once more you should see that Wifi is now connected e.g.:
+
+```
+main.c:67               WiFi standalone connected 0x0.
+mgos_net.c:89           WiFi STA: connected
+main.c:42               Net connected.
+main.c:24               Tock uptime: 1.43, RAM: 260148, 199064 free
+main.c:70               WiFi standalone IP address acquired 0x0.
+mgos_net.c:101          WiFi STA: ready, IP 10.20.71.91, GW 10.20.71.254, DNS 195.34.89.241
+main.c:45               Net got IP address.
+```
