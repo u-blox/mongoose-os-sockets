@@ -12,15 +12,16 @@
 #include "stdio.h"
 #include "mgos.h"
 
-#define SERVER_ADDRESS "udp://echo.u-blox.com:7"
-//#define SERVER_ADDRESS "udp://ciot.it-sgn.u-blox.com:5050"
+#define SERVER_ADDRESS "udp://ciot.it-sgn.u-blox.com:5050"
+//#define SERVER_ADDRESS "udp://echo.u-blox.com:7"
 #define TEST_MESSAGE "Hello world!\n"
 
 typedef enum {
     APP_STATE_NULL,
     APP_STATE_INITIALISED,
     APP_STATE_CONNECTED,
-    APP_STATE_COMMUNICATING,
+    APP_STATE_SEND,
+    APP_STATE_RECEIVE,
     APP_STATE_DISCONNECTED,
     MAX_NUM_APP_STATES
 } AppState;
@@ -131,7 +132,6 @@ static void socketEventHandler(struct mg_connection *pSocket, int event,
 
     switch (event) {
         case MG_EV_POLL:
-            LOG(LL_INFO, ("Socket: poll."));
         break;
         case MG_EV_ACCEPT:
             pContext->state = APP_STATE_CONNECTED;
@@ -149,12 +149,12 @@ static void socketEventHandler(struct mg_connection *pSocket, int event,
             }
         break;
         case MG_EV_RECV:
-            pContext->state = APP_STATE_COMMUNICATING;
+            pContext->state = APP_STATE_RECEIVE;
             LOG(LL_INFO, ("Socket: receive (%d byte(s)).",
                 *((int *) pEvData)));
         break;
         case MG_EV_SEND:
-            pContext->state = APP_STATE_COMMUNICATING;
+            pContext->state = APP_STATE_SEND;
             LOG(LL_INFO, ("Socket: send (%d byte(s)).",
                 *((int *) pEvData)));
         break;
@@ -174,17 +174,28 @@ static void socketEventHandler(struct mg_connection *pSocket, int event,
 // Return true if the context indicates connected, else false
 static bool isConnected(AppContext *pContext)
 {
-    return (pContext->state == APP_STATE_CONNECTED) || (pContext->state == APP_STATE_COMMUNICATING);
+    return (pContext->state == APP_STATE_CONNECTED) ||
+           (pContext->state == APP_STATE_SEND) ||
+           (pContext->state == APP_STATE_RECEIVE);
+}
+
+// Poll our comms manager so that it can do stuff
+static void pollCb(void *pArg)
+{
+    AppContext *pContext = (AppContext *) pArg;
+    if (pContext != NULL) {
+        mg_mgr_poll(&(pContext->mgr), 10);
+    }
 }
 
 // Main callback that does stuff
-static void timerCb(void *pArg)
+static void mainCb(void *pArg)
 {
     AppContext *pContext = (AppContext *) pArg;
     enum mgos_wifi_status wifiStatus;
 
     LOG(LL_INFO,
-        ("%s uptime: %.2lf, RAM: %lu, %lu free", (gTickTock ? "Tick:" : "Tock:"),
+        ("Main: uptime: %.0lf second(s), RAM: %lu byte(s), %lu byte(s) free.",
          mgos_uptime(), (unsigned long) mgos_get_heap_size(),
          (unsigned long) mgos_get_free_heap_size()));
 
@@ -192,23 +203,27 @@ static void timerCb(void *pArg)
 
     if (pContext != NULL) {
         wifiStatus = mgos_wifi_get_status();
-        LOG(LL_INFO, ("Wifi status %d.", wifiStatus));
+        LOG(LL_INFO, ("Main: Wifi status %d.", wifiStatus));
         if ((gpContext->state >= APP_STATE_INITIALISED) && 
             (wifiStatus == MGOS_WIFI_IP_ACQUIRED)) {
 
             if (pContext->pSocket == NULL) {
-                LOG(LL_INFO, ("Connecting to server \"%s\"...", SERVER_ADDRESS));
-                pContext->pSocket = mg_connect(&(pContext->mgr), SERVER_ADDRESS, socketEventHandler, pContext);
+                LOG(LL_INFO, ("Main: connecting to server \"%s\"...",
+                              SERVER_ADDRESS));
+                pContext->pSocket = mg_connect(&(pContext->mgr), SERVER_ADDRESS,
+                                               socketEventHandler, pContext);
                 if (pContext->pSocket != NULL) {
-                    LOG(LL_INFO, ("Socket might be open to \"%s\"...?", SERVER_ADDRESS));
+                    LOG(LL_INFO, ("Main: socket should be open to \"%s\".",
+                                  SERVER_ADDRESS));
+                    mgos_set_timer(100 /* ms */, true /* repeat */, pollCb, pContext);
                 } else {
-                    LOG(LL_ERROR, ("Socket open failed.\n"));
+                    LOG(LL_ERROR, ("Main: socket open failed."));
                 }
             }
 
             if (isConnected(gpContext)) {
                 assert(pContext->pSocket != NULL);
-                LOG(LL_INFO, ("Sending to socket..."));
+                LOG(LL_INFO, ("Main: sending to socket..."));
                 mg_send(pContext->pSocket, TEST_MESSAGE, sizeof (TEST_MESSAGE));
             }
         }
@@ -220,13 +235,13 @@ enum mgos_app_init_result mgos_app_init(void)
 {
     enum mgos_app_init_result result = MGOS_APP_INIT_ERROR;
 
-    LOG(LL_INFO, ("Starting up...\n"));
+    LOG(LL_INFO, ("Init: starting up...\n"));
     gpContext = (AppContext *) malloc (sizeof (*gpContext));
     if (gpContext != NULL) {
         memset (gpContext, 0, sizeof(*gpContext));
         gpContext->state = APP_STATE_NULL;
         /* Callback that actually does stuff */
-        mgos_set_timer(1000 /* ms */, true /* repeat */, timerCb, gpContext);
+        mgos_set_timer(1000 /* ms */, true /* repeat */, mainCb, gpContext);
 
         /* Network connectivity events */
         mgos_event_add_group_handler(MGOS_EVENT_GRP_NET, netCb, NULL);
@@ -238,12 +253,13 @@ enum mgos_app_init_result mgos_app_init(void)
         mgos_event_add_handler(MGOS_EVENT_CLOUD_CONNECTED, cloudCb, NULL);
         mgos_event_add_handler(MGOS_EVENT_CLOUD_DISCONNECTED, cloudCb, NULL);
 
-        LOG(LL_INFO, ("Initialising a connection manager...\n"));
+        LOG(LL_INFO, ("Init: initialising a connection manager...\n"));
         mg_mgr_init(&(gpContext->mgr), gpContext);
         gpContext->state = APP_STATE_INITIALISED;
         result = MGOS_APP_INIT_SUCCESS;
+        LOG(LL_INFO, ("Init: start-up completed.\n"));
     } else {
-        LOG(LL_ERROR, ("Unable to allocate memory for context.\n"));
+        LOG(LL_ERROR, ("Init: unable to allocate memory for context.\n"));
     }
 
     return result;
