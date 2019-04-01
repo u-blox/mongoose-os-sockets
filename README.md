@@ -95,7 +95,6 @@ If you reset the target board and look at the console output once more you shoul
 main.c:67               WiFi standalone connected 0x0.
 mgos_net.c:89           WiFi STA: connected
 main.c:42               Net connected.
-main.c:24               Tock uptime: 1.43, RAM: 260148, 199064 free
 main.c:70               WiFi standalone IP address acquired 0x0.
 mgos_net.c:101          WiFi STA: ready, IP 10.20.71.91, GW 10.20.71.254, DNS 195.34.89.241
 main.c:45               Net got IP address.
